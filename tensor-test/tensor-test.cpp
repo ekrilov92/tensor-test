@@ -1,20 +1,42 @@
-﻿// tensor-test.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
-//
-
+﻿#include <boost/program_options.hpp>
 #include <iostream>
+#include <string>
 
-int main()
+using namespace boost;
+using namespace std;
+namespace po = boost::program_options;
+
+
+int main(int argc, char * argv[])
 {
-    std::cout << "Hello World!\n";
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("source", po::value<string>(), "directory with source files")
+        ("include,I", po::value<vector<string>>(), "directory with include files");
+
+    po::positional_options_description p;
+    p.add("source", 1);
+
+    try {
+        po::variables_map vm;
+        po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+        po::notify(vm);
+
+        if (vm.count("source") == 0) {
+            cout << "Directory with source files is not specified";
+            return 2;
+        }
+        string source = vm["source"].as<string>();
+        vector<string> include;
+        if (vm.count("include")) {
+            include = vm["include"].as<vector<string>>();
+        }
+
+        for (auto x : include)
+            cout << x;
+    }
+    catch (po::error e) {
+        cout << "Command line arguments error" <<endl;
+        cout << desc;
+    }
 }
-
-// Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"
-// Отладка программы: F5 или меню "Отладка" > "Запустить отладку"
-
-// Советы по началу работы 
-//   1. В окне обозревателя решений можно добавлять файлы и управлять ими.
-//   2. В окне Team Explorer можно подключиться к системе управления версиями.
-//   3. В окне "Выходные данные" можно просматривать выходные данные сборки и другие сообщения.
-//   4. В окне "Список ошибок" можно просматривать ошибки.
-//   5. Последовательно выберите пункты меню "Проект" > "Добавить новый элемент", чтобы создать файлы кода, или "Проект" > "Добавить существующий элемент", чтобы добавить в проект существующие файлы кода.
-//   6. Чтобы снова открыть этот проект позже, выберите пункты меню "Файл" > "Открыть" > "Проект" и выберите SLN-файл.
