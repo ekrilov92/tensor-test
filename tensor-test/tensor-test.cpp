@@ -33,7 +33,7 @@ Arguments parse_arguments(int argc, char* argv[]) {
         if (vm.count("source") == 0) {
             cout << "Directory with source files is not specified" << endl;
             cout << desc;
-            return Arguments("", {});
+            return Arguments(string(), {});
         }
         string source = vm["source"].as<string>();
         vector<string> include;
@@ -46,7 +46,7 @@ Arguments parse_arguments(int argc, char* argv[]) {
         cout << "Command line arguments error" << endl;
         cout << desc;
     }
-    return Arguments("", {});
+    return Arguments(string(), {});
 }
 
 bool check_arguments(const Arguments& args) {
@@ -60,12 +60,26 @@ bool check_arguments(const Arguments& args) {
         path include_path(dir_name);
         directory_entry include_dir(include_path);
         if (!include_dir.exists()) {
-            cout << "Directory with include files " << dir_name << " not exist";
+            cout << "Directory with include files not exist";
             return false;
         }
     }
     return true;
-    
+}
+
+vector<string> build_file_list(const path & directory) {
+    vector<string> result;
+    for (auto& p : directory_iterator(directory)) {
+        if (p.is_directory()) {
+            auto files(build_file_list(p.path()));
+            result.reserve(result.size() + std::distance(files.begin(), files.end()));
+            result.insert(result.end(), files.begin(), files.end());
+            continue;
+        }
+        if (p.path().extension() == ".h" || p.path().extension() == ".cpp")
+            result.push_back(p.path().string());
+    }
+    return result;
 }
 
 int main(int argc, char * argv[])
@@ -75,4 +89,8 @@ int main(int argc, char * argv[])
         return 2;
     if (!check_arguments(args))
         return 3;
+    vector<string> files(build_file_list(args.source_directory));
+    for (auto x : files)
+        cout << x << endl;
+
 }
