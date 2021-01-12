@@ -1,4 +1,6 @@
 ﻿#include <boost/program_options.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <iostream>
 #include <string>
 #include <filesystem>
@@ -7,7 +9,6 @@
 using namespace boost;
 using namespace std;
 using namespace filesystem;
-namespace po = boost::program_options;
 
 //структура описывающая аргументы командной строки
 struct Arguments {
@@ -26,22 +27,33 @@ struct Includes {
     vector<string> local_files;
     //список файлов, которые нужно искать в дополнительных директориях для включаемых файлов
     vector<string> far_files;
+
+    friend ostream& operator<<(ostream& os, const Includes& data) {
+        os << "local_files:" << endl;
+        for (const string& x : data.local_files)
+            os << x << endl;
+        os << "far_files:" << endl;
+        for (const string& x : data.far_files)
+            os << x << endl;
+        return os;
+    }
 };
 
 Arguments parse_arguments(int argc, char* argv[]) {
     //функция для парсинга аргументов командной строки с обрботкой возможных ошибок
-    po::options_description desc("Allowed options");
+    using namespace boost::program_options;
+    options_description desc("Allowed options");
     desc.add_options()
-        ("source", po::value<string>(), "directory with source files")
-        ("include,I", po::value<vector<string>>(), "directory with include files");
+        ("source", value<string>(), "directory with source files")
+        ("include,I", value<vector<string>>(), "directory with include files");
 
-    po::positional_options_description p;
+    positional_options_description p;
     p.add("source", 1);
 
     try {
-        po::variables_map vm;
-        po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
-        po::notify(vm);
+        variables_map vm;
+        store(command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+        notify(vm);
 
         if (vm.count("source") == 0) {
             cout << "Directory with source files is not specified" << endl;
@@ -55,7 +67,7 @@ Arguments parse_arguments(int argc, char* argv[]) {
         }
         return Arguments(source, include);
     }
-    catch (po::error e) {
+    catch (error e) {
         cout << "Command line arguments error" << endl;
         cout << desc;
     }
@@ -97,10 +109,11 @@ vector<string> build_file_list(const path & directory) {
     return result;
 }
 
-void analize_file(const string& file_path) {
+Includes analize_file(const string& file_path) {
     //будем считывать исходный файл по одному символу и удалим все комментарии из него
     ifstream file(file_path);
     ofstream tmp_file(file_path + "_tmp");
+    // Сделаем временный файл в котором не будет закомментированного кода
     char c;
     while (file.get(c)) {
         //анализ однострочного комментария
@@ -142,6 +155,31 @@ void analize_file(const string& file_path) {
     }
     tmp_file.close();
     file.close();
+    //Извлечем из файла все директивы #include
+    Includes result;
+    file.open(file_path + "_tmp");
+    char line[1024];
+    string line_str;
+    while (!file.eof()) {
+        file.getline(line, 1024);
+        line_str = line;
+        trim(line_str);
+        if (starts_with(line_str, "#include")) {
+            // Поищем символы " или <
+            size_t start_file_name_pos = line_str.find_first_of("\"<", 8);
+            if (start_file_name_pos != line_str.npos) {
+                size_t end_file_name_pos = line_str.find_first_of("\">", start_file_name_pos + 1);
+                string included_file = line_str.substr(start_file_name_pos + 1, end_file_name_pos - start_file_name_pos - 1);
+                //Определим в какой из списков для поиска положить файл
+                if (line_str.find("\"", 8) != line_str.npos)
+                    result.local_files.push_back(included_file);
+                else
+                    result.far_files.push_back(included_file);
+            }
+        }
+    }
+    file.close();
+    return result;
 }
 
 int main(int argc, char * argv[])
@@ -152,8 +190,8 @@ int main(int argc, char * argv[])
     if (!check_arguments(args))
         return 3;
     vector<string> files(build_file_list(args.source_directory));
-    for (auto x : files)
-        cout << x << endl;
-    for (auto file_path : files)
-        analize_file(file_path);
+    for (auto file_path : files) {
+        auto dependencies(analize_file(file_path));
+        cout << file_path << endl << dependencies << "------" << endl;
+    }
 }
