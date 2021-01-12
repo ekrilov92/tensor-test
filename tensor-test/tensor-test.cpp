@@ -23,18 +23,18 @@ struct Arguments {
 
 //структура представлюящая зависимости одного файла
 struct Includes {
-    //список файлов, которые нужно искать локально, относительно файла
-    vector<string> local_files;
-    //список файлов, которые нужно искать в дополнительных директориях для включаемых файлов
-    vector<string> far_files;
+    //список файлов, которые нужно искать локально, относительно файла, второй член pair означает найден файл или нет
+    vector<pair<string, bool>> local_files;
+    //список файлов, которые нужно искать в дополнительных директориях для включаемых файлов, второй член pair означает найден файл или нет
+    vector<pair<string, bool>> far_files;
 
     friend ostream& operator<<(ostream& os, const Includes& data) {
         os << "local_files:" << endl;
-        for (const string& x : data.local_files)
-            os << x << endl;
+        for (const auto& x : data.local_files)
+            os << x.first << " " << x.second <<endl;
         os << "far_files:" << endl;
-        for (const string& x : data.far_files)
-            os << x << endl;
+        for (const auto& x : data.far_files)
+            os << x.first << " " << x.second << endl;
         return os;
     }
 };
@@ -172,14 +172,34 @@ Includes analize_file(const string& file_path) {
                 string included_file = line_str.substr(start_file_name_pos + 1, end_file_name_pos - start_file_name_pos - 1);
                 //Определим в какой из списков для поиска положить файл
                 if (line_str.find("\"", 8) != line_str.npos)
-                    result.local_files.push_back(included_file);
+                    result.local_files.push_back(make_pair(included_file, false));
                 else
-                    result.far_files.push_back(included_file);
+                    result.far_files.push_back(make_pair(included_file, false));
             }
         }
     }
     file.close();
     return result;
+}
+
+void find_files(const string& file_path, Includes& includes, const vector<string>& include_directories) {
+    // функция ищет все зависимости файла
+    path p(file_path);
+    path directory(p.parent_path());
+    for (auto& file_entry : includes.local_files) {
+        path included_file = directory.string() + "/" + file_entry.first;
+        if (exists(included_file))
+            file_entry.second = true;
+    }
+    for (auto& file_entry : includes.far_files) {
+        for (const string& include_dir : include_directories) {
+            path included_file = include_dir + "/" + file_entry.first;
+            if (exists(included_file)) {
+                file_entry.second = true;
+                continue;
+            }
+        }
+    }
 }
 
 int main(int argc, char * argv[])
@@ -192,6 +212,7 @@ int main(int argc, char * argv[])
     vector<string> files(build_file_list(args.source_directory));
     for (auto file_path : files) {
         auto dependencies(analize_file(file_path));
+        find_files(file_path, dependencies, args.include_directories);
         cout << file_path << endl << dependencies << "------" << endl;
     }
 }
