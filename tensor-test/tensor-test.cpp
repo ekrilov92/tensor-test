@@ -21,20 +21,30 @@ struct Arguments {
     }
 };
 
+//структура для хранения информации об одном файле
+struct File {
+    string name;
+    string path;
+    bool exist;
+
+    File(const string& name_, const string& path_, bool exist_) : name(name_), path(path_), exist(exist_) {}
+};
+
 //структура представлюящая зависимости одного файла
 struct Includes {
     //список файлов, которые нужно искать локально, относительно файла, второй член pair означает найден файл или нет
-    vector<pair<string, bool>> local_files;
+    vector<File> local_files;
     //список файлов, которые нужно искать в дополнительных директориях для включаемых файлов, второй член pair означает найден файл или нет
-    vector<pair<string, bool>> far_files;
+    vector<File> far_files;
 
     friend ostream& operator<<(ostream& os, const Includes& data) {
+        //для отладки
         os << "local_files:" << endl;
         for (const auto& x : data.local_files)
-            os << x.first << " " << x.second <<endl;
+            os << x.name << " " << x.exist <<endl;
         os << "far_files:" << endl;
         for (const auto& x : data.far_files)
-            os << x.first << " " << x.second << endl;
+            os << x.name << " " << x.exist << endl;
         return os;
     }
 };
@@ -93,9 +103,9 @@ bool check_arguments(const Arguments& args) {
     return true;
 }
 
-vector<string> build_file_list(const path & directory) {
+vector<File> build_file_list(const path & directory) {
     //функция для анализа директории и поиска в ней списка h и cpp файлов
-    vector<string> result;
+    vector<File> result;
     for (auto& p : directory_iterator(directory)) {
         if (p.is_directory()) {
             auto files(build_file_list(p.path()));
@@ -104,7 +114,7 @@ vector<string> build_file_list(const path & directory) {
             continue;
         }
         if (p.path().extension() == ".h" || p.path().extension() == ".cpp")
-            result.push_back(p.path().string());
+            result.push_back(File(p.path().filename().string(), p.path().string(), true));
     }
     return result;
 }
@@ -172,9 +182,9 @@ Includes analize_file(const string& file_path) {
                 string included_file = line_str.substr(start_file_name_pos + 1, end_file_name_pos - start_file_name_pos - 1);
                 //Определим в какой из списков для поиска положить файл
                 if (line_str.find("\"", 8) != line_str.npos)
-                    result.local_files.push_back(make_pair(included_file, false));
+                    result.local_files.push_back(File(included_file, included_file, false));
                 else
-                    result.far_files.push_back(make_pair(included_file, false));
+                    result.far_files.push_back(File(included_file, included_file, false));
             }
         }
     }
@@ -187,15 +197,17 @@ void find_files(const string& file_path, Includes& includes, const vector<string
     path p(file_path);
     path directory(p.parent_path());
     for (auto& file_entry : includes.local_files) {
-        path included_file = directory.string() + "/" + file_entry.first;
-        if (exists(included_file))
-            file_entry.second = true;
+        path p = directory / file_entry.name;
+        file_entry.path = p.string();
+        if (exists(p))
+            file_entry.exist = true;
     }
     for (auto& file_entry : includes.far_files) {
         for (const string& include_dir : include_directories) {
-            path included_file = include_dir + "/" + file_entry.first;
-            if (exists(included_file)) {
-                file_entry.second = true;
+            path p = path(include_dir) / file_entry.name;
+            file_entry.path = p.string();
+            if (exists(p)) {
+                file_entry.exist = true;
                 continue;
             }
         }
@@ -209,10 +221,48 @@ int main(int argc, char * argv[])
         return 2;
     if (!check_arguments(args))
         return 3;
-    vector<string> files(build_file_list(args.source_directory));
-    for (auto file_path : files) {
-        auto dependencies(analize_file(file_path));
-        find_files(file_path, dependencies, args.include_directories);
-        cout << file_path << endl << dependencies << "------" << endl;
+    /*
+        список всех файлов для анализа, потом в этот список будут попадать и другие файлы которые встречаются в дерективах include
+        параллельно является списком вершин графа для построения вывода
+    */
+    vector<File> files(build_file_list(args.source_directory));
+    vector<vector<size_t>> g(files.size()); //ребра связности файлов
+    //для каждого файла надем все его зависимости, далее найдем существуют ли на самом деле файлы затем обновим граф
+    size_t size = files.size();
+    for (size_t i = 0; i < size; i++) {
+        const File& file = files[i];
+        Includes dependencies(analize_file(file.path));
+        find_files(file.path, dependencies, args.include_directories);
+        //cout << file.path << endl << dependencies << "------" << endl;
+        auto includes(std::move(dependencies.local_files));
+        includes.reserve(includes.size() + std::distance(files.begin(), files.end()));
+        includes.insert(includes.end(), dependencies.far_files.begin(), dependencies.far_files.end());
+        for (auto& include : includes) {
+            auto it = std::find_if(files.begin(), files.end(), [&include](const File& f) {return include.path == f.path; });
+            size_t index = 0;
+            if (it == files.end()) {
+                files.push_back(include);
+                index = files.size() - 1;
+            }
+            else
+                index = it - files.begin();
+            if (std::find(g[i].begin(), g[i].end(), index) == g[i].end())
+                g[i].push_back(index);
+        }
+    }
+    vector<pair<string, size_t>> count;
+    for (size_t i = 0; i < files.size(); i++) {
+        pair<string, size_t> p = make_pair(files[i].name, 0);
+        for (const auto& v : g)
+            p.second += std::count(v.begin(), v.end(), i);
+        count.push_back(p);
+    }
+    sort(count.begin(), count.end(), [](auto& e1, auto& e2) {
+        if (e1.second == e2.second)
+            return e1.first < e2.first;
+        return e1.second > e2.second;
+    });
+    for (const auto& e : count) {
+        cout << e.first << " " << e.second << endl;
     }
 }
