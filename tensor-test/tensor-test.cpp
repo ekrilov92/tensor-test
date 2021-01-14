@@ -192,6 +192,7 @@ Includes analize_file(const string& file_path) {
         }
     }
     file.close();
+    remove(file_path + "_tmp");
     return result;
 }
 
