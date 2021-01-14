@@ -218,7 +218,7 @@ void find_files(const string& file_path, Includes& includes, const vector<path>&
     }
 }
 
-void print_output(const string& file_name, const vector<File>& files, const vector<vector<size_t>>& g, int level) {
+void print_output(const string& file_name, const vector<File>& files, const vector<vector<size_t>>& g, int level, vector<size_t> & used_files) {
     // функция выводит результат в соответствии с заданием
     for (int i = 0; i < level; i++)
         cout << " ";
@@ -228,9 +228,13 @@ void print_output(const string& file_name, const vector<File>& files, const vect
     if (!files[index].exist)
         cout << " (!)";
     cout << endl;
+    if (std::find(used_files.begin(), used_files.end(), index) != used_files.end())
+        return;
+    used_files.push_back(index);
     if(index < g.size())
         for (size_t included_file : g[index])
-            print_output(files[included_file].name, files, g, level + 1);
+            print_output(files[included_file].name, files, g, level + 1, used_files);
+    used_files.pop_back();
 }
 
 int main(int argc, char * argv[])
@@ -286,7 +290,8 @@ int main(int argc, char * argv[])
     for (const auto& el : count) {
         if (el.second != 0)
             continue;
-        print_output(el.first, files, g, 0);
+        vector<size_t> used_files;
+        print_output(el.first, files, g, 0, used_files);
     }
     cout << endl;
     for (const auto& e : count) {
