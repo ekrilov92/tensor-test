@@ -15,9 +15,9 @@ struct Arguments {
     //папка в которой находятся файлы для анализа
     string source_directory;
     //список папок для поиска зависимостей
-    vector<string> include_directories;
+    vector<path> include_directories;
 
-    Arguments(const string & source, const vector<string> & include) : source_directory(source), include_directories(include) {
+    Arguments(const string & source, const vector<path> & include) : source_directory(source), include_directories(include) {
     }
 };
 
@@ -72,10 +72,13 @@ Arguments parse_arguments(int argc, char* argv[]) {
         }
         string source = vm["source"].as<string>();
         vector<string> include;
+        vector<path> p_include;
         if (vm.count("include")) {
             include = vm["include"].as<vector<string>>();
         }
-        return Arguments(source, include);
+        for (const string& x : include)
+            p_include.push_back(path(x));
+;        return Arguments(source, p_include);
     }
     catch (error e) {
         cout << "Command line arguments error" << endl;
@@ -92,9 +95,8 @@ bool check_arguments(const Arguments& args) {
         cout << "Directory with source files not exist";
         return false;
     }
-    for (const string & dir_name : args.include_directories) {
-        path include_path(dir_name);
-        directory_entry include_dir(include_path);
+    for (const path & dir : args.include_directories) {
+        directory_entry include_dir(dir);
         if (!include_dir.exists()) {
             cout << "Directory with include files not exist";
             return false;
@@ -156,7 +158,8 @@ Includes analize_file(const string& file_path) {
                 }
             }
             else {
-                // если следующим после / оказался обычный символ то откатим буффер чтобы потом прочитать его снова
+                // если следующим после / оказался обычный символ то откатим буффер чтобы потом прочитать его снова а сам / запишем в файл
+                tmp_file << c;
                 file.unget();
             }
         }
@@ -192,7 +195,7 @@ Includes analize_file(const string& file_path) {
     return result;
 }
 
-void find_files(const string& file_path, Includes& includes, const vector<string>& include_directories) {
+void find_files(const string& file_path, Includes& includes, const vector<path>& include_directories) {
     // функция ищет все зависимости файла
     path p(file_path);
     path directory(p.parent_path());
@@ -203,8 +206,8 @@ void find_files(const string& file_path, Includes& includes, const vector<string
             file_entry.exist = true;
     }
     for (auto& file_entry : includes.far_files) {
-        for (const string& include_dir : include_directories) {
-            path p = path(include_dir) / file_entry.name;
+        for (const path& include_dir : include_directories) {
+            path p = include_dir / file_entry.name;
             file_entry.path = p.string();
             if (exists(p)) {
                 file_entry.exist = true;
@@ -212,6 +215,21 @@ void find_files(const string& file_path, Includes& includes, const vector<string
             }
         }
     }
+}
+
+void print_output(const string& file_name, const vector<File>& files, const vector<vector<size_t>>& g, int level) {
+    // функция выводит результат в соответствии с заданием
+    for (int i = 0; i < level; i++)
+        cout << " ";
+    cout << file_name;
+    auto it = std::find_if(files.begin(), files.end(), [&file_name](const File& f) {return f.name == file_name; });
+    size_t index = it - files.begin();
+    if (!files[index].exist)
+        cout << " (!)";
+    cout << endl;
+    if(index < g.size())
+        for (size_t included_file : g[index])
+            print_output(files[included_file].name, files, g, level + 1);
 }
 
 int main(int argc, char * argv[])
@@ -250,6 +268,7 @@ int main(int argc, char * argv[])
                 g[i].push_back(index);
         }
     }
+    // найдем сколько раз каждый файл включен в другие файлы
     vector<pair<string, size_t>> count;
     for (size_t i = 0; i < files.size(); i++) {
         pair<string, size_t> p = make_pair(files[i].name, 0);
@@ -257,11 +276,18 @@ int main(int argc, char * argv[])
             p.second += std::count(v.begin(), v.end(), i);
         count.push_back(p);
     }
+    // вывод результат
     sort(count.begin(), count.end(), [](auto& e1, auto& e2) {
         if (e1.second == e2.second)
             return e1.first < e2.first;
         return e1.second > e2.second;
     });
+    for (const auto& el : count) {
+        if (el.second != 0)
+            continue;
+        print_output(el.first, files, g, 0);
+    }
+    cout << endl;
     for (const auto& e : count) {
         cout << e.first << " " << e.second << endl;
     }
