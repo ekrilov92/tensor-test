@@ -128,6 +128,9 @@ Includes analize_file(const string& file_path) {
     // Сделаем временный файл в котором не будет закомментированного кода
     char c;
     while (file.get(c)) {
+        // пока смог понять что код символа будет <0 если кодировка файла с BOM
+        if (c < 0)
+            continue;
         //анализ однострочного комментария
         if (c == '/') {
             //если считали / то считаем следующий символ и если там тоже / то игнорируем все до конца строки
@@ -212,7 +215,7 @@ void find_files(const string& file_path, Includes& includes, const vector<path>&
             file_entry.path = p.string();
             if (exists(p)) {
                 file_entry.exist = true;
-                continue;
+                break;
             }
         }
     }
