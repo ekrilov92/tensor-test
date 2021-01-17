@@ -7,6 +7,8 @@
 using namespace std;
 using namespace boost;
 
+FilesAnalizer::File::File(const string& name_, const string& path_, bool exist_) : name(name_), path(path_), exist(exist_) {}
+
 void FilesAnalizer::analize_files(const string& source_directory, const vector<path>& include_directories)
 {
     /*
@@ -64,7 +66,7 @@ void FilesAnalizer::analize_files(const string& source_directory, const vector<p
     }
 }
 
-vector<File> FilesAnalizer::build_file_list(const path& directory) {
+vector<FilesAnalizer::File> FilesAnalizer::build_file_list(const path& directory) {
     //функция для анализа директории и поиска в ней списка h и cpp файлов
     vector<File> result;
     for (auto& p : directory_iterator(directory)) {
@@ -80,7 +82,7 @@ vector<File> FilesAnalizer::build_file_list(const path& directory) {
     return result;
 }
 
-Includes FilesAnalizer::analize_file(const string& file_path) {
+FilesAnalizer::Includes FilesAnalizer::analize_file(const string& file_path) {
     //будем считывать исходный файл по одному символу и удалим все комментарии из него
     ifstream file(file_path);
     ofstream tmp_file(file_path + "_tmp");
